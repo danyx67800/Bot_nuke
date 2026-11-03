@@ -130,6 +130,13 @@ export class MockManager {
     if (this.sent.length > 200) this.sent.shift();
   }
 
+  /** In demo tutti i canali di testo accettano messaggi. */
+  sendableChannels() {
+    return this.channels
+      .filter((channel) => channel.type === 0 || channel.type === 5)
+      .map((channel) => ({ id: channel.id, name: channel.name }));
+  }
+
   inviteUrl() { return null; }
 
   status() {

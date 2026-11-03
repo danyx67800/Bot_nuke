@@ -25,6 +25,8 @@ export function defaultConfig() {
     messages: {
       enabled: true,
       mode: 'rotation',
+      // 'all' = ogni canale di testo del server, 'one' = solo channels.message.
+      target: 'all',
       texts: [],
       repeat: 3,
       gapMs: 1200,
@@ -164,6 +166,7 @@ export function sanitizeConfig(input, current = defaultConfig()) {
     const messages = input.messages;
     if (typeof messages.enabled === 'boolean') cfg.messages.enabled = messages.enabled;
     if (['rotation', 'timer', 'off'].includes(messages.mode)) cfg.messages.mode = messages.mode;
+    if (['all', 'one'].includes(messages.target)) cfg.messages.target = messages.target;
 
     if (Array.isArray(messages.texts)) {
       const texts = messages.texts
@@ -218,8 +221,11 @@ export function validateForComplete(cfg, { hasToken = Boolean(cfg.bot.token) } =
   }
 
   if (cfg.messages.enabled && cfg.messages.mode !== 'off') {
-    if (!cfg.channels.message) errors.push('Seleziona il canale dove inviare i messaggi.');
     if (!cfg.messages.texts.length) errors.push('Scrivi almeno un messaggio da inviare.');
+    // Con la destinazione "tutti i canali" non serve sceglierne uno.
+    if (cfg.messages.target === 'one' && !cfg.channels.message) {
+      errors.push('Seleziona il canale dove inviare i messaggi.');
+    }
   }
 
   if (cfg.rotation.applyOrder && cfg.channels.animated.length < 2) {

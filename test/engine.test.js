@@ -134,3 +134,35 @@ test('validateForComplete segnala cosa manca', () => {
   cfg.rotation.names = { [channelId]: ['🔥-{n}'] };
   assert.deepEqual(validateForComplete(cfg, { hasToken: true }), []);
 });
+
+test('di default i messaggi vanno in tutti i canali di testo', () => {
+  const cfg = defaultConfig();
+  assert.equal(cfg.messages.target, 'all');
+
+  cfg.bot.guildId = '100000000000000001';
+  cfg.channels.animated = [{ id: '100000000000000002', name: 'chat', type: 0 }];
+  cfg.rotation.names = { '100000000000000002': ['🔥-{n}'] };
+  cfg.messages.texts = ['ciao'];
+  // Nessun canale scelto: con "tutti" la configurazione è comunque completa.
+  assert.deepEqual(validateForComplete(cfg, { hasToken: true }), []);
+
+  cfg.messages.target = 'one';
+  const errors = validateForComplete(cfg, { hasToken: true });
+  assert.ok(errors.some((error) => error.includes('canale')));
+});
+
+test('sanitizeConfig conserva la destinazione dei messaggi', () => {
+  assert.equal(sanitizeConfig({ messages: { target: 'one' } }, defaultConfig()).config.messages.target, 'one');
+  assert.equal(sanitizeConfig({ messages: { target: 'all' } }, defaultConfig()).config.messages.target, 'all');
+  assert.equal(sanitizeConfig({ messages: { target: 'x' } }, defaultConfig()).config.messages.target, 'all');
+});
+
+test('MockManager elenca i canali di testo in cui scrivere', async () => {
+  const { MockManager } = await import('../src/bot/mock.js');
+  const logger = { info() {}, warn() {}, success() {}, error() {} };
+  const manager = new MockManager({ logger });
+  await manager.connect({});
+  const channels = manager.sendableChannels();
+  assert.equal(channels.length, 4);
+  assert.ok(channels.every((channel) => channel.id && channel.name));
+});

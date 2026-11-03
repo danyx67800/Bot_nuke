@@ -195,6 +195,26 @@ export class DiscordManager {
     return guilds;
   }
 
+  /** Canali in cui il bot può davvero scrivere: testo e annunci, permessi permettendo. */
+  sendableChannels() {
+    const guild = this.guild ?? this.client?.guilds?.cache?.get(this.guildId) ?? null;
+    if (!guild) return [];
+    const me = this.client?.user ? guild.members?.me ?? null : null;
+    const canSend = (channel) => {
+      if (!me) return true;
+      try {
+        return channel.permissionsFor?.(me)?.has(PermissionsBitField.Flags.SendMessages) ?? true;
+      } catch {
+        return true;
+      }
+    };
+    return [...(guild.channels?.cache?.values() ?? [])]
+      .filter((channel) => channel.type === 0 || channel.type === 5)
+      .filter(canSend)
+      .sort((a, b) => (a.rawPosition ?? 0) - (b.rawPosition ?? 0))
+      .map((channel) => ({ id: channel.id, name: channel.name }));
+  }
+
   async guildInfo() {
     if (!this.guild) return null;
     let missing = [];

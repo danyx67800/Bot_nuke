@@ -308,7 +308,7 @@ export function createApp({ store, auth, manager, rotation, logger, mock }) {
   api.post('/control/send', async (req, res) => {
     const text = String(req.body?.text ?? '').trim();
     if (!text) return res.status(400).json({ error: 'Scrivi il messaggio da inviare.' });
-    if (!store.data.channels.message) {
+    if (store.data.messages.target === 'one' && !store.data.channels.message) {
       return res.status(400).json({ error: 'Nessun canale messaggi configurato.' });
     }
     if (!manager.ready) return res.status(400).json({ error: 'Il bot non è connesso.' });

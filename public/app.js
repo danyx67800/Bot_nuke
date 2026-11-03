@@ -299,8 +299,8 @@ function renderOverview() {
         <small>${bot.guild?.memberCount ? `${bot.guild.memberCount} membri` : 'nessun server selezionato'}</small>
       </div>
       <div class="kpi">
-        <span class="kpi-label">canale messaggi</span>
-        <strong>${esc(cfg.channels?.message?.name || '—')}</strong>
+        <span class="kpi-label">canali messaggi</span>
+        <strong>${cfg.messages?.target === 'one' ? esc(cfg.channels?.message?.name || '—') : 'tutti i canali di testo'}</strong>
         <small>${
           cfg.messages?.mode === 'rotation' ? `un burst da ${cfg.messages.repeat} a ogni tick`
             : cfg.messages?.mode === 'timer' ? `ogni ${cfg.messages.intervalSec}s · ${cfg.messages.repeat} copie`
@@ -556,6 +556,7 @@ function stepChannels() {
   const all = data.channels ?? [];
   const animated = new Set((state.draft?.channels?.animated ?? []).map((channel) => channel.id));
   const messageId = state.draft?.channels?.message?.id ?? '';
+  const target = state.draft?.messages?.target === 'one' ? 'one' : 'all';
   const categories = all.filter((channel) => channel.type === 4).sort((a, b) => a.position - b.position);
   const selectable = all.filter((channel) => [0, 2, 5, 13, 15, 16].includes(channel.type));
 
@@ -586,14 +587,24 @@ function stepChannels() {
                 </label>`).join('')}
             </div>`).join('')}
         </div>
-        <label class="field" style="margin-top:16px">
-          <span>Canale per i messaggi</span>
-          <select id="message-channel">
+        <div class="field" style="margin-top:16px">
+          <span>Dove inviare i messaggi</span>
+          <div class="row" style="gap:20px;margin-top:8px;flex-wrap:wrap">
+            <label class="channel-row" style="padding:0">
+              <input type="radio" name="msg-target" value="all" ${target === 'all' ? 'checked' : ''}>
+              <span class="name">Tutti i canali di testo</span>
+            </label>
+            <label class="channel-row" style="padding:0">
+              <input type="radio" name="msg-target" value="one" ${target === 'one' ? 'checked' : ''}>
+              <span class="name">Un solo canale</span>
+            </label>
+          </div>
+          <small>Con “tutti” il bot scrive in ogni canale di testo in cui ha il permesso di inviare messaggi.</small>
+          <select id="message-channel" style="margin-top:10px" ${target === 'one' ? '' : 'hidden'}>
             <option value="">— nessuno —</option>
             ${all.filter((channel) => [0, 5].includes(channel.type)).map((channel) => `<option value="${esc(channel.id)}" ${channel.id === messageId ? 'selected' : ''}>#${esc(channel.name)}</option>`).join('')}
           </select>
-          <small>Qui il bot scrive i testi che decidi dalla dashboard.</small>
-        </label>`}
+        </div>`}
     </div>`;
 }
 
@@ -726,6 +737,8 @@ function collectStep(step) {
       const id = select.value;
       draft.channels.message = id ? { id, name: byId.get(id)?.name ?? '' } : null;
     }
+    const target = $('input[name="msg-target"]:checked');
+    if (target) draft.messages.target = target.value === 'one' ? 'one' : 'all';
     for (const key of Object.keys(draft.rotation.names ?? {})) {
       if (!checked.includes(key)) delete draft.rotation.names[key];
     }
@@ -775,7 +788,7 @@ function validateStep(step) {
   if (step === 2 && !draft.bot?.guildId) return 'Scegli il server su cui far girare l\'evento.';
   if (step === 3) {
     if (!draft.channels.animated.length) return 'Seleziona almeno un canale da animare.';
-    if (draft.messages.enabled && draft.messages.mode !== 'off' && !draft.channels.message) {
+    if (draft.messages.enabled && draft.messages.mode !== 'off' && draft.messages.target === 'one' && !draft.channels.message) {
       return 'Scegli il canale dove inviare i messaggi.';
     }
   }
@@ -1191,6 +1204,13 @@ document.addEventListener('input', (event) => {
     try { collectStep(state.step); } catch { /* campi non ancora montati */ }
     if (state.step === 4 || state.step === 5) loadPreview();
   }, 400);
+});
+
+// La tendina del canale serve solo quando i messaggi vanno in un canale solo.
+document.addEventListener('change', (event) => {
+  if (event.target?.name !== 'msg-target') return;
+  const select = $('#message-channel');
+  if (select) select.hidden = event.target.value !== 'one';
 });
 
 document.addEventListener('change', async (event) => {

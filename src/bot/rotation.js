@@ -64,7 +64,7 @@ export class Rotation {
     if (!cfg.channels.animated.some((channel) => cfg.rotation.names[channel.id]?.length)) {
       throw new Error('Nessun nome configurato per i canali.');
     }
-    if (cfg.messages.enabled && cfg.messages.mode !== 'off' && !cfg.channels.message) {
+    if (cfg.messages.enabled && cfg.messages.mode !== 'off' && cfg.messages.target === 'one' && !cfg.channels.message) {
       throw new Error('Canale dei messaggi non configurato.');
     }
     if (this.state.running) return this.status();
@@ -259,7 +259,7 @@ export class Rotation {
         }
       }
 
-      if (cfg.messages.enabled && cfg.messages.mode === 'rotation' && cfg.channels.message && this.state.running) {
+      if (cfg.messages.enabled && cfg.messages.mode === 'rotation' && this.state.running) {
         this.state.pending.push({
           text: frame.text,
           count: cfg.messages.repeat,
@@ -309,21 +309,34 @@ export class Rotation {
     }
   }
 
+  /** Canali di destinazione: tutti quelli di testo, oppure solo quello scelto. */
+  #messageTargets() {
+    const cfg = this.store.data;
+    if (cfg.messages.target !== 'one') {
+      return this.manager.sendableChannels?.() ?? [];
+    }
+    return cfg.channels.message ? [cfg.channels.message] : [];
+  }
+
   /** Burst di messaggi con spaziatura e limite per canale. */
   async burst({ text = '', count, gapMs, tick, force = false } = {}) {
     const cfg = this.store.data;
-    const channel = cfg.channels.message;
-    if (!channel) {
-      this.logger.warn('Nessun canale messaggi configurato: burst ignorato.');
-      return { sent: 0, total: 0 };
+    const targets = this.#messageTargets();
+    if (!targets.length) {
+      this.logger.warn(cfg.messages.target === 'one'
+        ? 'Nessun canale messaggi configurato: burst ignorato.'
+        : 'Nessun canale di testo disponibile: burst ignorato.');
+      return { sent: 0, total: 0, channels: 0 };
     }
     const frame = computeFrame(cfg, tick ?? this.state.tick);
     const content = String(text || frame.text || '').trim();
-    if (!content) return { sent: 0, total: 0 };
+    if (!content) return { sent: 0, total: 0, channels: targets.length };
 
     const dryRun = Boolean(cfg.loop.dryRun) && !force;
-    const total = Math.min(25, Math.max(1, Math.round(Number(count ?? cfg.messages.repeat) || 1)));
+    // Copie per canale: il budget Discord è per canale, non globale.
+    const perChannel = Math.min(25, Math.max(1, Math.round(Number(count ?? cfg.messages.repeat) || 1)));
     const gap = Math.min(60_000, Math.max(300, Math.round(Number(gapMs ?? cfg.messages.gapMs) || 1200)));
+    const total = perChannel * targets.length;
     const generation = this.generation;
 
     if (this.state.msgBusy) {
@@ -333,33 +346,37 @@ export class Rotation {
     this.state.msgBusy = true;
     let sent = 0;
     try {
-      for (let index = 0; index < total; index += 1) {
-        if (generation !== this.generation) break;
-        while (!this.limits.send.take(channel.id)) {
-          await sleep(600);
-          if (generation !== this.generation) return { sent, total };
-        }
-        if (dryRun) {
-          sent += 1;
-        } else {
-          try {
-            await this.manager.send(channel.id, content, { allowMentions: cfg.messages.allowMentions });
-            sent += 1;
-            this.store.data.stats.messages += 1;
-          } catch (err) {
-            this.#handleRateLimit('send', channel.id, err);
-            this.logger.error(`Invio messaggio fallito: ${err.message}`);
-            break;
+      for (const channel of targets) {
+        for (let index = 0; index < perChannel; index += 1) {
+          if (generation !== this.generation) break;
+          while (!this.limits.send.take(channel.id)) {
+            await sleep(600);
+            if (generation !== this.generation) break;
           }
+          if (generation !== this.generation) break;
+          if (dryRun) {
+            sent += 1;
+          } else {
+            try {
+              await this.manager.send(channel.id, content, { allowMentions: cfg.messages.allowMentions });
+              sent += 1;
+              this.store.data.stats.messages += 1;
+            } catch (err) {
+              this.#handleRateLimit('send', channel.id, err);
+              this.logger.error(`Invio messaggio fallito in #${channel.name}: ${err.message}`);
+              break; // un canale senza permessi non deve fermare gli altri
+            }
+          }
+          if (index < perChannel - 1) await sleep(gap);
         }
-        if (index < total - 1) await sleep(gap);
       }
       this.store.save();
       const preview = content.length > 70 ? `${content.slice(0, 70)}…` : content;
+      const destination = targets.length > 1 ? `${targets.length} canali` : `#${targets[0].name}`;
       this.logger.success(
-        `${dryRun ? '[DRY RUN] ' : ''}Inviati ${sent}/${total} messaggi in #${channel.name}: “${preview}”`,
+        `${dryRun ? '[DRY RUN] ' : ''}Inviati ${sent}/${total} messaggi in ${destination}: “${preview}”`,
       );
-      return { sent, total };
+      return { sent, total, channels: targets.length };
     } finally {
       this.state.msgBusy = false;
     }
@@ -473,6 +490,7 @@ export class Rotation {
   status() {
     const cfg = this.store.data;
     const states = this.manager.channelStates();
+    const messageTargets = this.#messageTargets();
     const channels = (cfg.channels.animated ?? []).map((channel) => {
       const state = states.get(channel.id);
       return {
@@ -502,7 +520,10 @@ export class Rotation {
           nextAt: this.limits.reorder.nextAt('guild'),
         },
         messages: {
-          remaining: cfg.channels.message ? this.limits.send.remaining(cfg.channels.message.id) : 0,
+          targets: messageTargets.length,
+          remaining: messageTargets.length
+            ? Math.min(...messageTargets.map((channel) => this.limits.send.remaining(channel.id)))
+            : 0,
         },
       },
       preview: computeFrame(cfg, this.state.tick),
