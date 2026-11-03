@@ -1,0 +1,21 @@
+{
+  "name": "bot-nuke",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bot Discord per eventi: rinomina e riordina i canali in loop e spamma i messaggi decisi dalla dashboard. Dashboard web con configurazione guidata e hosting su UmbrelOS.",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "dev": "node --env-file-if-exists=.env --watch src/index.js",
+    "demo": "MOCK_DISCORD=1 DATA_DIR=./data-demo node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.28.0",
+    "express": "^5.3.0"
+  }
+}

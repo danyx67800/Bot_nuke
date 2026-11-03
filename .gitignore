@@ -1,0 +1,9 @@
+node_modules/
+data/
+data-demo/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+bot-nuke/data/

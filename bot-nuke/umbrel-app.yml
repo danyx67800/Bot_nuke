@@ -1,0 +1,34 @@
+manifestVersion: 1.1
+id: bot-nuke
+category: social
+name: Bot Nuke
+version: "1.0.0"
+tagline: Caos controllato per il tuo evento Discord
+description: >-
+  Bot Nuke fa animare il server durante l'evento: cambia in loop i nomi dei canali,
+  ne rimescola l'ordine e ripete in chat i messaggi che decidi tu.
+
+
+  Tutto si comanda da una dashboard web con configurazione guidata in sei passi:
+  token del bot, server, canali, nomi e ordine, messaggi e tempi. C'è anche un
+  pulsante Panic che ferma il loop e rimette i nomi originali.
+
+
+  Il comportamento rispetta i limiti di Discord: le rinomine vengono messe in coda
+  (massimo 2 per canale ogni 10 minuti) e i messaggi sono spalmati automaticamente,
+  così il bot non viene rate-limitato.
+website: https://github.com/danyx67800/Bot_nuke
+dependencies: []
+repo: https://github.com/danyx67800/Bot_nuke
+support: https://github.com/danyx67800/Bot_nuke/issues
+port: 4321
+gallery: []
+path: ""
+defaultUsername: ""
+defaultPassword: ""
+releaseNotes: >-
+  Prima release: loop di nomi e ordine, burst di messaggi, dashboard con procedura
+  guidata, dry run, snapshot e ripristino dei canali.
+developer: danyx67800
+submitter: danyx67800
+submission: https://github.com/danyx67800/Bot_nuke

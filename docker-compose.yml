@@ -1,0 +1,15 @@
+# docker compose up -d --build
+# Dashboard: http://localhost:4321
+services:
+  bot-nuke:
+    build: .
+    container_name: bot-nuke
+    restart: unless-stopped
+    ports:
+      - "4321:4321"
+    environment:
+      PORT: "4321"
+      DATA_DIR: /data
+      TZ: Europe/Rome
+    volumes:
+      - ./data:/data
