@@ -55,8 +55,10 @@ Apri `http://localhost:4321`, imposta la password della dashboard e segui i sei 
 Il repository è anche un **community app store** di Umbrel (`umbrel-app-store.yml` + `bot-nuke/umbrel-app.yml`).
 
 1. Su Umbrel apri **App Store → … → Community App Stores**.
-2. Aggiungi l'URL: `https://github.com/danyx67800/Bot_nuke`
-3. Installa **Bot Nuke** e aprila dalla home di Umbrel.
+2. Aggiungi l'URL: `https://github.com/Gigiomiccio425/Gigio-dany-appstore` (store **Gigio & Dany**).
+3. Installa **Bot Nuke** e apri la dashboard dalla home di Umbrel.
+
+Questo repository è a sua volta uno store autonomo (`https://github.com/danyx67800/Bot_nuke`), utile solo se vuoi installare l'app da sola.
 
 L'app usa l'immagine `ghcr.io/danyx67800/bot-nuke:1.0.0`, costruita da GitHub Actions. I dati (config, token, sessioni) stanno in `${APP_DATA_DIR}/data` e sopravvivono a update e riavvii.
 
