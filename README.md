@@ -100,7 +100,7 @@ Stato del loop, countdown del prossimo tick, anteprima di cosa cambierà, budget
 ### Configurazione (guidata)
 1. **Bot** — incolla il token, verifica e connetti. Mostra tag, ID e avatar del bot.
 2. **Server** — scegli il server tra quelli in cui il bot è presente, con i permessi mancanti evidenziati.
-3. **Canali** — seleziona i canali da animare (raggruppati per categoria) e il canale dei messaggi.
+3. **Canali** — seleziona i canali da animare (raggruppati per categoria) e dove inviare i messaggi: tutti i canali di testo (predefinito) oppure uno solo.
 4. **Nomi e ordine** — un nome per riga per ogni canale, rotazione dell'ordine (`0, 1, 2` = fermo, +1, +2) e anteprima dei prossimi 6 tick.
 5. **Messaggi** — testi (uno per riga, ruotano), copie per burst, attesa, timer indipendente, menzioni.
 6. **Tempi e avvio** — intervallo, jitter, dry run, riavvio automatico, avvio immediato, con il calcolo del budget.
