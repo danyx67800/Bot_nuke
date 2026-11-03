@@ -60,7 +60,7 @@ Il repository è anche un **community app store** di Umbrel (`umbrel-app-store.y
 
 Questo repository è a sua volta uno store autonomo (`https://github.com/danyx67800/Bot_nuke`), utile solo se vuoi installare l'app da sola.
 
-L'app usa l'immagine `ghcr.io/danyx67800/bot-nuke:1.0.0`, costruita da GitHub Actions. I dati (config, token, sessioni) stanno in `${APP_DATA_DIR}/data` e sopravvivono a update e riavvii.
+L'app usa l'immagine `ghcr.io/danyx67800/bot-nuke:1.0.2`, costruita da GitHub Actions. I dati (config, token, sessioni) stanno in `${APP_DATA_DIR}/data` e sopravvivono a update e riavvii.
 
 > Se il pull dell'immagine fallisce con *unauthorized*, apri GitHub → **Packages → bot-nuke → Package settings** e imposta la visibilità su **Public**.
 
