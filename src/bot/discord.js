@@ -169,12 +169,16 @@ export class DiscordManager {
       this.logger.warn(`Impossibile elencare i server: ${err.message}`);
     }
     const guilds = [...this.client.guilds.cache.values()].map((guild) => {
-      const me = guild.members?.me;
+      // members.me legge client.user.id: senza utente loggato (riconnessione in
+      // corso) lancerebbe e manderebbe in 500 l'elenco server.
+      const me = this.client.user ? guild.members?.me : null;
       const missing = me ? permissionNames(me.permissions) : null;
       return {
         id: guild.id,
         name: guild.name,
-        icon: guild.iconURL?.({ size: 96, extension: 'png' }) ?? null,
+        // 96 non è una dimensione valida per discord.js (solo potenze di 2):
+        // passarla fa lanciare iconURL() e manda in 500 l'elenco server.
+        icon: guild.iconURL?.({ size: 128, extension: 'png' }) ?? null,
         memberCount: guild.memberCount ?? null,
         selected: guild.id === this.guildId,
         missing,
@@ -203,7 +207,7 @@ export class DiscordManager {
     return {
       id: this.guild.id,
       name: this.guild.name,
-      icon: this.guild.iconURL?.({ size: 96, extension: 'png' }) ?? null,
+      icon: this.guild.iconURL?.({ size: 128, extension: 'png' }) ?? null,
       memberCount: this.guild.memberCount ?? null,
       missing,
       permissionsOk: missing.length === 0,
