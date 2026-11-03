@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { publicConfig, sanitizeConfig, validateForComplete, exportConfig } from './config.js';
@@ -7,7 +8,10 @@ import { isSnowflake, maskToken } from './util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
-const VERSION = '1.0.0';
+// Versione unica: quella di package.json, così manifest e dashboard non divergono.
+const { version: VERSION } = JSON.parse(
+  fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+);
 
 function originGuard(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();

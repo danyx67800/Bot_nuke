@@ -38,6 +38,7 @@ const state = {
   source: null,
   previewTimer: null,
   modalResolve: null,
+  setupSig: null,
 };
 
 /* ---------------- API ---------------- */
@@ -153,6 +154,39 @@ function renderAll() {
   if (state.view === 'overview') renderOverview();
   if (state.view === 'activity') renderActivity();
   if (state.view === 'settings') renderSettings();
+  autoRefreshWizard();
+}
+
+/**
+ * Firma di ciò che il wizard legge dal server (connessione, elenco server,
+ * server scelto, canali). Serve a capire quando ridisegnarlo.
+ */
+function wizardSignature() {
+  const data = state.data;
+  if (!data) return '';
+  return [
+    data.bot?.connected ? 'on' : 'off',
+    (data.guilds ?? []).map((guild) => guild.id).join(','),
+    data.bot?.guildId ?? '',
+    (data.channels ?? []).length,
+  ].join('|');
+}
+
+/**
+ * Il passo 2 elenca i server del bot: se nel frattempo lo inviti su un server
+ * la lista deve comparire da sola. Non ridisegna mentre stai scrivendo, per non
+ * perdere quello che hai digitato.
+ */
+function autoRefreshWizard() {
+  if (state.view !== 'setup' || !state.data) return;
+  const signature = wizardSignature();
+  if (signature === state.setupSig) return;
+  state.setupSig = signature;
+  const active = document.activeElement;
+  const typing = active && $('#wizard-body')?.contains(active)
+    && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
+  if (typing || state.step > 3) return;
+  renderWizard();
 }
 
 function renderChrome() {
@@ -414,6 +448,7 @@ function openWizard(step) {
   if (step) { state.step = step; state.maxStep = Math.max(state.maxStep, step); }
   state.maxStep = Math.max(state.maxStep || 1, state.step);
   renderWizard();
+  state.setupSig = wizardSignature();
 }
 
 function renderWizard() {
@@ -505,11 +540,13 @@ function stepGuild() {
               <small>${guild.memberCount ? `${guild.memberCount} membri` : 'membri non disponibili'}${guild.missing?.length ? ` · manca: ${esc(guild.missing.join(', '))}` : ''}</small>
             </span>
           </button>`).join('')}
-      </div>` : '<div class="alert warn">Il bot non è ancora in nessun server. Usa il link di invito qui sotto.</div>'}
-      ${invite ? `<div class="row" style="margin-top:14px">
-        <button class="btn ghost" data-action="copy-invite">Copia link di invito</button>
-        <a class="btn ghost" href="${esc(invite)}" target="_blank" rel="noreferrer">Apri invito Discord</a>
-      </div>` : ''}
+      </div>` : `<div class="alert warn">Il bot non è ancora in nessun server. Aprilo col link qui sotto (scope <strong>bot</strong>), autorizza, poi premi <em>Ricontrolla i server</em>: se l'invito è andato a buon fine la lista compare anche da sola entro pochi secondi.</div>
+        ${data.bot?.tag ? `<p class="hint" style="margin-top:8px">Connesso come <strong>${esc(data.bot.tag)}</strong> (id ${esc(data.bot.id)}). Se non è il bot che hai invitato, il token al passo 1 è di un'altra applicazione.</p>` : ''}`}
+      <div class="row" style="margin-top:14px">
+        <button class="btn ghost small" data-action="refresh-guilds">Ricontrolla i server</button>
+        ${invite ? `<button class="btn ghost small" data-action="copy-invite">Copia link di invito</button>
+          <a class="btn ghost small" href="${esc(invite)}" target="_blank" rel="noreferrer">Apri invito Discord</a>` : ''}
+      </div>
       ${data.bot?.guild?.missing?.length ? `<div class="alert warn" style="margin-top:12px">Permessi mancanti: ${esc(data.bot.guild.missing.join(', '))}. Senza "Gestire i canali" il bot non può rinominare.</div>` : ''}
     </div>`;
 }
@@ -1050,6 +1087,23 @@ document.addEventListener('click', async (event) => {
     case 'send-now':
       await sendNow();
       break;
+    case 'refresh-guilds': {
+      try {
+        const result = await api('/bot/guilds');
+        state.data.guilds = result.guilds ?? [];
+        state.setupSig = wizardSignature();
+        renderWizard();
+        toast(
+          state.data.guilds.length
+            ? `${state.data.guilds.length} server disponibili.`
+            : 'Nessun server: invita il bot con il link qui sotto e riprova.',
+          state.data.guilds.length ? 'success' : 'warn',
+        );
+      } catch (error) {
+        toast(error.message, 'error');
+      }
+      break;
+    }
     case 'copy-invite':
       copyInvite();
       break;

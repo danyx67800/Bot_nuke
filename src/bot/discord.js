@@ -35,6 +35,7 @@ export class DiscordManager {
     this.botUser = null;
     this.lastError = null;
     this.connectedAt = null;
+    this.lastGuildCount = null;
   }
 
   get connected() {
@@ -99,6 +100,13 @@ export class DiscordManager {
       this.ready = true;
       this.logger.success('Gateway Discord riconnesso.');
     });
+    // Serve a capire subito se l'invito è andato a buon fine.
+    client.on('guildCreate', (guild) => {
+      this.logger.success(`Bot aggiunto al server "${guild.name}" (${guild.id}).`);
+    });
+    client.on('guildDelete', (guild) => {
+      this.logger.warn(`Bot rimosso dal server "${guild.name}" (${guild.id}).`);
+    });
 
     try {
       await client.login(token);
@@ -160,7 +168,7 @@ export class DiscordManager {
     } catch (err) {
       this.logger.warn(`Impossibile elencare i server: ${err.message}`);
     }
-    return [...this.client.guilds.cache.values()].map((guild) => {
+    const guilds = [...this.client.guilds.cache.values()].map((guild) => {
       const me = guild.members?.me;
       const missing = me ? permissionNames(me.permissions) : null;
       return {
@@ -172,6 +180,15 @@ export class DiscordManager {
         missing,
       };
     }).sort((a, b) => (b.memberCount ?? 0) - (a.memberCount ?? 0));
+
+    // Log solo quando cambia: la dashboard interroga questo metodo ogni 3 secondi.
+    if (guilds.length !== this.lastGuildCount) {
+      this.lastGuildCount = guilds.length;
+      this.logger.info(guilds.length
+        ? `Server visibili al bot: ${guilds.length} (${guilds.map((guild) => guild.name).join(', ')})`
+        : 'Il bot non è in nessun server: invitalo dal passo 2 della configurazione.');
+    }
+    return guilds;
   }
 
   async guildInfo() {
