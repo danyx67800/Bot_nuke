@@ -157,6 +157,16 @@ test('sanitizeConfig conserva la destinazione dei messaggi', () => {
   assert.equal(sanitizeConfig({ messages: { target: 'x' } }, defaultConfig()).config.messages.target, 'all');
 });
 
+test('sanitizeConfig normalizza prefisso e intervallo della creazione canali', () => {
+  const result = sanitizeConfig({ flood: { prefix: '  Nuke  Party', intervalSec: 0 } }, defaultConfig());
+  assert.equal(result.config.flood.prefix, 'Nuke-Party');
+  assert.equal(result.config.flood.intervalSec, 1);
+  // Il trattino finale è il separatore tra prefisso e numero: non va perso.
+  assert.equal(sanitizeConfig({ flood: { prefix: 'caos-' } }, defaultConfig()).config.flood.prefix, 'caos-');
+  assert.equal(sanitizeConfig({ flood: { prefix: '' } }, defaultConfig()).config.flood.prefix, 'nuke-');
+  assert.equal(sanitizeConfig({ flood: { intervalSec: 99_999 } }, defaultConfig()).config.flood.intervalSec, 3600);
+});
+
 test('MockManager elenca i canali di testo in cui scrivere', async () => {
   const { MockManager } = await import('../src/bot/mock.js');
   const logger = { info() {}, warn() {}, success() {}, error() {} };
@@ -165,4 +175,72 @@ test('MockManager elenca i canali di testo in cui scrivere', async () => {
   const channels = manager.sendableChannels();
   assert.equal(channels.length, 4);
   assert.ok(channels.every((channel) => channel.id && channel.name));
+});
+
+function memoryStore(config) {
+  return {
+    data: config,
+    update(mutator) {
+      mutator(this.data);
+      return this.data;
+    },
+    save() {},
+  };
+}
+
+test('Rotation crea canali in loop, si ferma al tetto e li elimina col ripristino', async () => {
+  const { Rotation } = await import('../src/bot/rotation.js');
+  const { MockManager, DEMO_GUILD_ID } = await import('../src/bot/mock.js');
+  const logger = { info() {}, warn() {}, success() {}, error() {} };
+  const manager = new MockManager({ logger });
+  await manager.connect({});
+
+  const cfg = defaultConfig();
+  cfg.bot.guildId = DEMO_GUILD_ID;
+  cfg.loop.dryRun = false;
+  cfg.flood = { prefix: 'nuke-', intervalSec: 0.1, created: [] };
+  const store = memoryStore(cfg);
+  const base = manager.channels.length;
+  const rotation = new Rotation({ store, manager, logger, channelLimit: base + 2 });
+
+  await rotation.startFlood();
+  assert.equal(rotation.status().flood.running, true);
+  await new Promise((resolve) => setTimeout(resolve, 900));
+
+  // Tetto raggiunto: il loop si ferma da solo.
+  assert.equal(rotation.status().flood.running, false);
+  const created = store.data.flood.created;
+  assert.deepEqual(created.map((item) => item.name), ['nuke-1', 'nuke-2']);
+  assert.equal(store.data.stats.created, 2);
+  assert.equal(manager.channels.length, base + 2);
+
+  // Panic: i canali creati vengono eliminati.
+  rotation.restore({ stopFirst: false });
+  await new Promise((resolve) => setTimeout(resolve, 1400));
+  assert.equal(manager.channels.length, base);
+  assert.equal(store.data.flood.created.length, 0);
+});
+
+test('con il dry run la creazione non tocca Discord', async () => {
+  const { Rotation } = await import('../src/bot/rotation.js');
+  const { MockManager, DEMO_GUILD_ID } = await import('../src/bot/mock.js');
+  const logger = { info() {}, warn() {}, success() {}, error() {} };
+  const manager = new MockManager({ logger });
+  await manager.connect({});
+
+  const cfg = defaultConfig();
+  cfg.bot.guildId = DEMO_GUILD_ID;
+  cfg.loop.dryRun = true;
+  cfg.flood = { prefix: 'nuke-', intervalSec: 0.1, created: [] };
+  const store = memoryStore(cfg);
+  const base = manager.channels.length;
+  const rotation = new Rotation({ store, manager, logger, channelLimit: base + 5 });
+
+  await rotation.startFlood();
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  rotation.stopFlood('test');
+
+  assert.equal(manager.channels.length, base);
+  assert.equal(store.data.flood.created.length, 0);
+  assert.equal(rotation.status().flood.created, 0);
 });

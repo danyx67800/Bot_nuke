@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, PermissionsBitField } from 'discord.js';
+import { Client, GatewayIntentBits, PermissionsBitField, ChannelType } from 'discord.js';
 import { channelTypeLabel } from './channels.js';
 
 const REQUIRED_FLAGS = [
@@ -290,6 +290,25 @@ export class DiscordManager {
       content,
       allowedMentions: allowMentions ? { parse: ['everyone', 'roles', 'users'] } : { parse: [] },
     });
+  }
+
+  async createTextChannel(name, reason) {
+    if (!this.guild) throw new Error('Server non selezionato.');
+    const channel = await this.guild.channels.create({
+      name,
+      type: ChannelType.GuildText,
+      reason,
+    });
+    return { id: channel.id, name: channel.name };
+  }
+
+  async deleteChannel(channelId, reason) {
+    if (!this.guild) throw new Error('Server non selezionato.');
+    const channel = this.guild.channels.cache.get(channelId)
+      ?? await this.guild.channels.fetch(channelId).catch(() => null);
+    if (!channel) return false; // già eliminato a mano: nessun errore
+    await channel.delete(reason);
+    return true;
   }
 
   inviteUrl(guildId) {

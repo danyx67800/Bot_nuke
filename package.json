@@ -1,9 +1,9 @@
 {
   "name": "bot-nuke",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Bot Discord per eventi: rinomina e riordina i canali in loop e spamma i messaggi decisi dalla dashboard. Dashboard web con configurazione guidata e hosting su UmbrelOS.",
+  "description": "Bot Discord per eventi: rinomina e riordina i canali in loop, crea canali all'infinito e spamma i messaggi decisi dalla dashboard. Dashboard web con configurazione guidata e hosting su UmbrelOS.",
   "main": "src/index.js",
   "engines": {
     "node": ">=22"

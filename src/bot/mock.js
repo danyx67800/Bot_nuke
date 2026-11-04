@@ -28,6 +28,7 @@ export class MockManager {
     this.sent = [];
     this.connectedAt = null;
     this.changes = 0;
+    this.createdCounter = 0;
   }
 
   get connected() { return this.ready; }
@@ -135,6 +136,28 @@ export class MockManager {
     return this.channels
       .filter((channel) => channel.type === 0 || channel.type === 5)
       .map((channel) => ({ id: channel.id, name: channel.name }));
+  }
+
+  async createTextChannel(name) {
+    this.createdCounter += 1;
+    const channel = {
+      id: `1000000000000002${String(this.createdCounter).padStart(2, '0')}`,
+      name: normalizeChannelName(name, 0),
+      type: 0,
+      position: this.channels.length ? Math.max(...this.channels.map((item) => item.position)) + 1 : 0,
+      parentId: null,
+    };
+    this.channels.push(channel);
+    this.changes += 1;
+    return { id: channel.id, name: channel.name };
+  }
+
+  async deleteChannel(channelId) {
+    const index = this.channels.findIndex((item) => item.id === channelId);
+    if (index === -1) return false;
+    this.channels.splice(index, 1);
+    this.changes += 1;
+    return true;
   }
 
   inviteUrl() { return null; }

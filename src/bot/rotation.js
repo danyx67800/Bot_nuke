@@ -2,6 +2,7 @@ import { computeFrame } from './frame.js';
 import { normalizeChannelName } from './channels.js';
 import { SlidingWindow } from './limiter.js';
 import { clampPostRate, sleep } from '../util.js';
+import { MAX_GUILD_CHANNELS, floodChannelName } from '../config.js';
 
 const TEN_MINUTES = 10 * 60_000;
 const RESTORE_ROUND_DELAY = 30_000;
@@ -13,14 +14,18 @@ const RESTORE_ROUND_DELAY = 30_000;
  * viene rimandata (e mostrata) invece di generare errori 429.
  */
 export class Rotation {
-  constructor({ store, manager, logger }) {
+  constructor({ store, manager, logger, channelLimit = MAX_GUILD_CHANNELS }) {
     this.store = store;
     this.manager = manager;
     this.logger = logger;
+    // Iniettabile nei test: in produzione è il tetto di Discord.
+    this.channelLimit = Math.max(1, Number(channelLimit) || MAX_GUILD_CHANNELS);
     this.limits = {
       rename: new SlidingWindow(2, TEN_MINUTES),
       reorder: new SlidingWindow(2, TEN_MINUTES),
       send: new SlidingWindow(5, 5_000),
+      create: new SlidingWindow(1, 60_000),
+      delete: new SlidingWindow(1, 60_000),
     };
     this.state = {
       running: false,
@@ -34,11 +39,13 @@ export class Rotation {
       lastError: null,
       startedAt: null,
       restore: null,
+      flood: { running: false, created: 0, next: 1, startedAt: null, nextAt: null, lastError: null },
     };
     this.wakes = new Set();
     this.generation = 0;
     this.loop = null;
     this.messageLoop = null;
+    this.floodLoop = null;
   }
 
   #sleep(ms) {
@@ -100,6 +107,129 @@ export class Rotation {
     this.store.update((data) => { data.stats.lastStoppedAt = new Date().toISOString(); });
     this.logger.info(`Loop fermato${reason ? ` (${reason})` : ''}.`);
     return this.status();
+  }
+
+  /* ---------------- Creazione continua di canali ---------------- */
+
+  /** Avvia la creazione di un canale di testo a ogni intervallo, finché non la fermi. */
+  async startFlood() {
+    const cfg = this.store.data;
+    if (!this.manager.ready) throw new Error('Il bot non è connesso a Discord.');
+    if (!cfg.bot.guildId) throw new Error('Nessun server selezionato.');
+    if (this.state.flood.running) return this.floodStatus();
+    const total = this.manager.channelStates().size;
+    if (total >= this.channelLimit) {
+      throw new Error(`Il server ha già ${total} canali: Discord ne consente al massimo ${this.channelLimit}.`);
+    }
+    const created = Array.isArray(cfg.flood?.created) ? cfg.flood.created : [];
+    this.state.flood = {
+      running: true,
+      created: 0,
+      next: created.length + 1,
+      startedAt: Date.now(),
+      nextAt: null,
+      lastError: null,
+    };
+    this.logger.success(
+      `Creazione canali avviata · prefisso “${cfg.flood.prefix}” · uno ogni ${cfg.flood.intervalSec}s · stop al tetto di ${this.channelLimit} canali`,
+    );
+    this.floodLoop = this.#runFlood();
+    return this.floodStatus();
+  }
+
+  stopFlood(reason = '') {
+    if (!this.state.flood.running) return this.floodStatus();
+    this.state.flood.running = false;
+    this.state.flood.nextAt = null;
+    this.#wakeAll();
+    this.logger.info(
+      `Creazione canali fermata${reason ? ` (${reason})` : ''} · ${this.state.flood.created} in questa sessione, ${this.floodStatus().created} in totale.`,
+    );
+    return this.floodStatus();
+  }
+
+  async #runFlood() {
+    while (this.state.flood.running) {
+      const cfg = this.store.data;
+      // Intervallo in secondi; il minimo di 100ms serve solo ai test.
+      const interval = Math.max(100, (Number(cfg.flood.intervalSec) || 5) * 1000);
+      if (!this.manager.ready) {
+        this.state.flood.lastError = 'Bot disconnesso.';
+        this.stopFlood('bot disconnesso');
+        this.logger.error('Creazione canali interrotta: bot disconnesso.');
+        break;
+      }
+      const total = this.manager.channelStates().size;
+      if (total >= this.channelLimit) {
+        this.stopFlood(`tetto di ${this.channelLimit} canali raggiunto`);
+        this.logger.warn(
+          `Creazione canali fermata: il server ha raggiunto il tetto di ${this.channelLimit} canali di Discord.`,
+        );
+        break;
+      }
+
+      const name = floodChannelName(cfg.flood.prefix, this.state.flood.next);
+      const dryRun = Boolean(cfg.loop.dryRun);
+      let waitMs = interval;
+      try {
+        if (dryRun) {
+          this.logger.info(
+            `[DRY RUN] Creerebbe il canale #${normalizeChannelName(name, 0)} (${total + 1}/${this.channelLimit}).`,
+          );
+        } else {
+          const channel = await this.manager.createTextChannel(name, 'Bot Nuke: creazione canali');
+          this.store.update((data) => {
+            if (!Array.isArray(data.flood.created)) data.flood.created = [];
+            data.flood.created.push({ id: channel.id, name: channel.name, at: new Date().toISOString() });
+            data.stats.created = (data.stats.created ?? 0) + 1;
+          });
+          this.logger.success(
+            `Canale #${channel.name} creato · ${this.state.flood.created + 1} in questa sessione.`,
+          );
+        }
+        this.state.flood.created += 1;
+        this.state.flood.next += 1;
+      } catch (err) {
+        this.state.flood.lastError = err.message;
+        this.#handleRateLimit('create', 'guild', err);
+        this.logger.error(`Creazione canale fallita: ${err.message}`);
+        if (this.#isChannelLimitError(err)) {
+          this.stopFlood('limite canali di Discord');
+          this.logger.warn('Discord rifiuta altri canali: il server ha raggiunto il suo tetto.');
+          break;
+        }
+        // Dopo un errore non martellare: aspetta almeno l'intervallo o il rate limit.
+        waitMs = Math.max(interval, this.limits.create.nextAt('guild') - Date.now(), 5_000);
+      }
+
+      if (!this.state.flood.running) break;
+      this.state.flood.nextAt = Date.now() + waitMs;
+      await this.#sleep(waitMs);
+    }
+    this.state.flood.nextAt = null;
+  }
+
+  #isChannelLimitError(err) {
+    return Number(err?.code) === 30013
+      || /maximum number of (guild )?channels/i.test(String(err?.message ?? ''));
+  }
+
+  floodStatus() {
+    const cfg = this.store.data;
+    const created = Array.isArray(cfg.flood?.created) ? cfg.flood.created : [];
+    return {
+      running: this.state.flood.running,
+      prefix: cfg.flood?.prefix ?? 'nuke-',
+      intervalSec: cfg.flood?.intervalSec ?? 5,
+      created: created.length,
+      sessionCreated: this.state.flood.created ?? 0,
+      nextName: floodChannelName(cfg.flood?.prefix, created.length + 1),
+      nextAt: this.state.flood.nextAt,
+      startedAt: this.state.flood.startedAt,
+      lastError: this.state.flood.lastError,
+      limit: this.channelLimit,
+      channels: this.manager.channelStates().size,
+    };
   }
 
   async #runRotation() {
@@ -390,20 +520,29 @@ export class Rotation {
   /** Ripristina i nomi e l'ordine originali (panic button). */
   restore({ stopFirst = true } = {}) {
     const snapshot = this.store.data.snapshot;
-    if (!snapshot?.channels?.length) throw new Error('Nessun nome originale salvato da ripristinare.');
+    const created = Array.isArray(this.store.data.flood?.created) ? this.store.data.flood.created : [];
+    if (!snapshot?.channels?.length && !created.length) {
+      throw new Error('Nessun nome originale salvato da ripristinare.');
+    }
     if (stopFirst) this.stop('ripristino');
+    this.stopFlood('ripristino');
     if (this.state.restore?.active) return this.restoreStatus();
 
+    const channels = snapshot?.channels ?? [];
     this.state.restore = {
       active: true,
       done: 0,
-      total: snapshot.channels.length,
+      total: channels.length,
       startedAt: Date.now(),
       finishedAt: null,
       errors: [],
-      queue: snapshot.channels.map((channel) => ({ ...channel })),
+      queue: channels.map((channel) => ({ ...channel })),
+      deletes: created.map((channel) => ({ ...channel })),
+      deleted: 0,
     };
-    this.logger.info(`Ripristino avviato per ${snapshot.channels.length} canali…`);
+    this.logger.info(
+      `Ripristino avviato: ${channels.length} nomi${created.length ? ` · ${created.length} canali creati da eliminare` : ''}…`,
+    );
     this.#restoreLoop(snapshot).catch((err) => {
       this.state.restore.active = false;
       this.logger.error(`Ripristino interrotto: ${err.message}`);
@@ -413,8 +552,31 @@ export class Rotation {
 
   async #restoreLoop(snapshot) {
     const restore = this.state.restore;
+    const snapshotChannels = snapshot?.channels ?? [];
     let reorderDone = false;
     for (let round = 0; round < 60; round += 1) {
+      // I canali nati dalla creazione continua vengono eliminati prima di rimettere i nomi.
+      const deletesBefore = restore.deletes.length;
+      while (restore.deletes.length) {
+        const item = restore.deletes[restore.deletes.length - 1];
+        try {
+          await this.manager.deleteChannel(item.id, 'Bot Nuke: ripristino');
+          restore.deletes.pop();
+          restore.deleted += 1;
+        } catch (err) {
+          this.#handleRateLimit('delete', item.id, err);
+          restore.errors.push(err.message);
+          break;
+        }
+        await sleep(400);
+      }
+      if (restore.deletes.length !== deletesBefore) {
+        this.store.update((data) => {
+          const remaining = new Set(restore.deletes.map((entry) => entry.id));
+          data.flood.created = (data.flood.created ?? []).filter((entry) => remaining.has(entry.id));
+        });
+      }
+
       const states = this.manager.channelStates();
       for (let index = restore.queue.length - 1; index >= 0; index -= 1) {
         const item = restore.queue[index];
@@ -441,8 +603,8 @@ export class Rotation {
         await sleep(600);
       }
 
-      if (!restore.queue.length && !reorderDone) {
-        const ordered = snapshot.channels.slice().sort((a, b) => a.position - b.position);
+      if (!restore.queue.length && !restore.deletes.length && !reorderDone) {
+        const ordered = snapshotChannels.slice().sort((a, b) => a.position - b.position);
         if (ordered.length < 2) {
           reorderDone = true;
         } else if (this.limits.reorder.take('guild')) {
@@ -455,20 +617,25 @@ export class Rotation {
         }
       }
 
-      if (!restore.queue.length && reorderDone) break;
+      if (!restore.queue.length && !restore.deletes.length && reorderDone) break;
       await sleep(RESTORE_ROUND_DELAY);
     }
 
     restore.active = false;
     restore.finishedAt = Date.now();
-    if (!restore.queue.length) {
+    if (!restore.queue.length && !restore.deletes.length) {
       this.store.update((data) => {
+        data.flood.created = [];
         if (data.snapshot) data.snapshot.restoredAt = new Date().toISOString();
       });
-      this.logger.success('Ripristino completato: nomi e ordine originali ripristinati.');
+      this.logger.success(
+        restore.deleted
+          ? `Ripristino completato: ${restore.deleted} canali creati eliminati, nomi e ordine originali ripristinati.`
+          : 'Ripristino completato: nomi e ordine originali ripristinati.',
+      );
     } else {
       this.logger.warn(
-        `Ripristino incompleto: ${restore.queue.length} canali restano da sistemare (limite Discord di 2 modifiche / 10 minuti). Riprova più tardi.`,
+        `Ripristino incompleto: ${restore.queue.length} nomi e ${restore.deletes.length} canali creati restano da sistemare (limite Discord di 2 modifiche / 10 minuti). Riprova più tardi.`,
       );
     }
   }
@@ -481,6 +648,8 @@ export class Rotation {
       done: restore.done,
       total: restore.total,
       remaining: restore.queue?.length ?? 0,
+      deleted: restore.deleted ?? 0,
+      totalDeletes: (restore.deleted ?? 0) + (restore.deletes?.length ?? 0),
       startedAt: restore.startedAt,
       finishedAt: restore.finishedAt,
       errors: restore.errors.slice(-5),
@@ -513,6 +682,7 @@ export class Rotation {
       dryRun: Boolean(cfg.loop.dryRun),
       intervalSec: cfg.loop.intervalSec,
       restore: this.restoreStatus(),
+      flood: this.floodStatus(),
       budget: {
         channels,
         reorder: {

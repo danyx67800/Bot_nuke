@@ -1,10 +1,11 @@
 # ☢️ Bot Nuke
 
-Bot Discord per eventi, con dashboard web e configurazione guidata. Fa esattamente tre cose, in loop:
+Bot Discord per eventi, con dashboard web e configurazione guidata. Fa quattro cose, in loop:
 
 - **cambia i nomi dei canali** a rotazione;
 - **rimescola l'ordine** dei canali;
-- **ripete in chat** i messaggi che decidi tu dalla dashboard.
+- **ripete in chat** i messaggi che decidi tu dalla dashboard;
+- **crea canali nuovi** a intervalli regolari, finché non premi Ferma.
 
 Pensato per girare su **UmbrelOS** (container singolo, dati su volume, dashboard dietro l'app proxy di Umbrel).
 
@@ -20,6 +21,7 @@ Pensato per girare su **UmbrelOS** (container singolo, dati su volume, dashboard
 | **Dry run** | Simula tutto e logga cosa farebbe, senza toccare Discord. |
 | **Snapshot + Panic** | Salva i nomi originali al primo avvio e li ripristina con un pulsante. |
 | **Burst di messaggi** | N copie per tick o timer indipendente, spaziate automaticamente. |
+| **Creazione canali** | Un canale nuovo ogni N secondi con prefisso e numero progressivo, finché non lo fermi; si blocca al tetto di Discord. |
 | **Log live** | Stream SSE + log completo con filtri. |
 | **Demo mode** | `MOCK_DISCORD=1` per provare tutto senza token né server. |
 
@@ -34,6 +36,7 @@ Discord non permette di rinominare un canale quanto vuoi. Il bot non aggira i li
 | Nome canale | ~2 modifiche / 10 min **per canale** | Coda con finestra scorrevole; le azioni oltre budget vengono rimandate al tick successivo |
 | Ordine canali | ~2 riordini / 10 min **per server** | Stesso meccanismo, separato |
 | Messaggi | ~5 / 5 s **per canale** | I burst vengono spalmati (attesa minima 300 ms tra le copie) |
+| Creazione canali | max **500 canali per server** (testuali, vocali, categorie) e creazioni ravvicinate rallentate | Il loop aspetta i 429 e si ferma da solo al tetto; Panic elimina i canali creati |
 | Sicurezza account | 10.000 richieste non valide / 10 min = ban 24 h | Il bot non forza mai i 429: li intercetta e mette in pausa la chiave |
 
 Conseguenza pratica: con **intervallo 300 s** ogni canale viene rinominato 2 volte ogni 10 minuti, cioè al limite massimo consentito. Sotto i 300 s alcune rinomine verranno rimandate. La dashboard lo calcola e lo mostra al passo 6.
@@ -60,7 +63,7 @@ Il repository è anche un **community app store** di Umbrel (`umbrel-app-store.y
 
 Questo repository è a sua volta uno store autonomo (`https://github.com/danyx67800/Bot_nuke`), utile solo se vuoi installare l'app da sola.
 
-L'app usa l'immagine `ghcr.io/danyx67800/bot-nuke:1.0.2`, costruita da GitHub Actions. I dati (config, token, sessioni) stanno in `${APP_DATA_DIR}/data` e sopravvivono a update e riavvii.
+L'app usa l'immagine `ghcr.io/danyx67800/bot-nuke:1.1.0`, costruita da GitHub Actions. I dati (config, token, sessioni) stanno in `${APP_DATA_DIR}/data` e sopravvivono a update e riavvii.
 
 > Se il pull dell'immagine fallisce con *unauthorized*, apri GitHub → **Packages → bot-nuke → Package settings** e imposta la visibilità su **Public**.
 
@@ -95,7 +98,7 @@ Il bot non usa intent privilegiati: solo `Guilds`.
 ## La dashboard
 
 ### Panoramica
-Stato del loop, countdown del prossimo tick, anteprima di cosa cambierà, budget Discord per ogni canale e log degli ultimi eventi. Da qui: **Avvia**, **Ferma**, **Forza un tick**, **Panic** e invio immediato di messaggi.
+Stato del loop, countdown del prossimo tick, anteprima di cosa cambierà, budget Discord per ogni canale e log degli ultimi eventi. Da qui: **Avvia**, **Ferma**, **Forza un tick**, **Panic**, invio immediato di messaggi e la card **Crea canali all'infinito** (prefisso, intervallo, avvio/stop). Con il dry run attivo la creazione viene solo simulata nel log.
 
 ### Configurazione (guidata)
 1. **Bot** — incolla il token, verifica e connetti. Mostra tag, ID e avatar del bot.

@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>Bot Nuke · Dashboard</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css?v=1.0.0">
+  <link rel="stylesheet" href="/styles.css?v=1.1.0">
 </head>
 <body>
   <div class="bg-glow" aria-hidden="true"></div>
@@ -73,7 +73,7 @@
           <div class="card-head">
             <div>
               <h3>Invia subito</h3>
-              <p class="muted">Scrive nel canale scelto, indipendentemente dal loop.</p>
+              <p class="muted">Scrive dove previsto dalla configurazione, indipendentemente dal loop.</p>
             </div>
             <span class="badge" id="quick-send-channel">nessun canale</span>
           </div>
@@ -83,6 +83,30 @@
               <label class="field compact"><span>Volte</span><input id="quick-count" type="number" min="1" max="25" value="3"></label>
               <label class="field compact"><span>Attesa (ms)</span><input id="quick-gap" type="number" min="300" max="60000" step="100" value="1200"></label>
               <button class="btn primary" data-action="send-now">Invia ora</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h3>Crea canali all'infinito</h3>
+              <p class="muted">Aggiunge un canale di testo nuovo a ogni intervallo, finché non premi Ferma o arrivi al limite di Discord.</p>
+            </div>
+            <span class="badge off" id="flood-badge">fermo</span>
+          </div>
+          <div class="quick-send-grid">
+            <div class="stack" style="gap:10px">
+              <div class="row" style="gap:10px;flex-wrap:wrap">
+                <label class="field compact"><span>Prefisso</span><input id="flood-prefix" maxlength="60" placeholder="nuke-"></label>
+                <label class="field compact"><span>Ogni (secondi)</span><input id="flood-interval" type="number" min="1" max="3600" step="1" value="5"></label>
+              </div>
+              <p class="hint" id="flood-hint">I canali si chiamano <code>nuke-1</code>, <code>nuke-2</code>, …</p>
+            </div>
+            <div class="quick-send-side">
+              <button class="btn primary" data-action="flood-start" id="flood-start">Avvia creazione</button>
+              <button class="btn danger" data-action="flood-stop" id="flood-stop" hidden>Ferma creazione</button>
+              <span class="hint" id="flood-count">0 canali creati</span>
             </div>
           </div>
         </div>
@@ -166,6 +190,7 @@
             <li><strong>Nomi canale:</strong> Discord consente 2 modifiche per canale ogni 10 minuti. Il bot mette in coda le azioni e le rimanda quando il budget è finito.</li>
             <li><strong>Ordine canale:</strong> 2 riordini per server ogni 10 minuti.</li>
             <li><strong>Messaggi:</strong> circa 5 ogni 5 secondi per canale; i burst vengono spalmati automaticamente.</li>
+            <li><strong>Creazione canali:</strong> Discord consente al massimo 500 canali per server (testuali, vocali e categorie) e rallenta le creazioni ravvicinate: il bot aspetta quando riceve un 429 e si ferma da solo al tetto.</li>
             <li><strong>Permessi richiesti:</strong> Gestire i canali, Vedere i canali, Inviare messaggi.</li>
           </ul>
           <p class="hint" id="about-version">Bot Nuke</p>
@@ -211,6 +236,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=1.0.0" type="module"></script>
+  <script src="/app.js?v=1.1.0" type="module"></script>
 </body>
 </html>

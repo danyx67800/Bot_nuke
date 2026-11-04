@@ -235,6 +235,8 @@ export function createApp({ store, auth, manager, rotation, logger, mock }) {
       cfg.rotation = next.rotation;
       cfg.messages = next.messages;
       cfg.loop = next.loop;
+      cfg.flood.prefix = next.flood.prefix;
+      cfg.flood.intervalSec = next.flood.intervalSec;
       cfg.bot.guildId = next.bot.guildId ?? cfg.bot.guildId;
       cfg.bot.guildName = next.bot.guildName ?? cfg.bot.guildName;
     });
@@ -256,6 +258,8 @@ export function createApp({ store, auth, manager, rotation, logger, mock }) {
       cfg.rotation = next.rotation;
       cfg.messages = next.messages;
       cfg.loop = next.loop;
+      cfg.flood.prefix = next.flood.prefix;
+      cfg.flood.intervalSec = next.flood.intervalSec;
       cfg.bot.guildId = next.bot.guildId ?? cfg.bot.guildId;
       cfg.bot.guildName = next.bot.guildName ?? cfg.bot.guildName;
       cfg.setup = { complete: true, updatedAt: new Date().toISOString() };
@@ -285,6 +289,25 @@ export function createApp({ store, auth, manager, rotation, logger, mock }) {
         case 'tick':
           if (!store.data.setup.complete) throw new Error('Completa prima la configurazione.');
           await rotation.runTick({ manual: true });
+          break;
+        case 'flood-start': {
+          const current = store.data;
+          const result = sanitizeConfig({
+            flood: {
+              prefix: req.body?.prefix ?? current.flood.prefix,
+              intervalSec: req.body?.intervalSec ?? current.flood.intervalSec,
+            },
+          }, current);
+          if (!result.ok) throw new Error(result.errors[0]);
+          store.update((data) => {
+            data.flood.prefix = result.config.flood.prefix;
+            data.flood.intervalSec = result.config.flood.intervalSec;
+          });
+          await rotation.startFlood();
+          break;
+        }
+        case 'flood-stop':
+          rotation.stopFlood('dalla dashboard');
           break;
         case 'restore':
           rotation.restore({ stopFirst: true });
@@ -360,6 +383,8 @@ export function createApp({ store, auth, manager, rotation, logger, mock }) {
       cfg.rotation = next.rotation;
       cfg.messages = next.messages;
       cfg.loop = next.loop;
+      cfg.flood.prefix = next.flood.prefix;
+      cfg.flood.intervalSec = next.flood.intervalSec;
       if (next.bot.guildId) cfg.bot.guildId = next.bot.guildId;
     });
     logger.success('Configurazione importata.');

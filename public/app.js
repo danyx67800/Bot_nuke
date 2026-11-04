@@ -150,7 +150,10 @@ function renderAll() {
   renderChrome();
   renderBanner();
   const message = state.data.config?.channels?.message;
-  $('#quick-send-channel').textContent = message ? `#${message.name}` : 'nessun canale';
+  const toAll = state.data.config?.messages?.target !== 'one';
+  $('#quick-send-channel').textContent = toAll
+    ? 'tutti i canali'
+    : (message ? `#${message.name}` : 'nessun canale');
   if (state.view === 'overview') renderOverview();
   if (state.view === 'activity') renderActivity();
   if (state.view === 'settings') renderSettings();
@@ -250,6 +253,7 @@ function renderOverview() {
   const animated = cfg.channels?.animated ?? [];
   const preview = rt.preview ?? { names: [], shift: 0 };
   const complete = Boolean(cfg.setup?.complete);
+  const flood = rt.flood ?? {};
   const liveNames = new Map((rt.budget?.channels ?? []).map((channel) => [channel.id, channel.name]));
   const connected = Boolean(bot.connected);
 
@@ -274,7 +278,7 @@ function renderOverview() {
             ? '<button class="btn danger" data-action="stop">Ferma loop</button>'
             : `<button class="btn primary" data-action="start" ${complete && connected ? '' : 'disabled'}>Avvia loop</button>`}
           <button class="btn ghost" data-action="tick" ${complete && connected ? '' : 'disabled'}>Forza un tick</button>
-          <button class="btn danger" data-action="panic" ${cfg.snapshot ? '' : 'disabled'}>Panic · ripristina</button>
+          <button class="btn danger" data-action="panic" ${cfg.snapshot || (flood.created ?? 0) > 0 ? '' : 'disabled'}>Panic · ripristina</button>
         </div>
       </div>
       <div class="hero-count">
@@ -310,7 +314,7 @@ function renderOverview() {
       <div class="kpi">
         <span class="kpi-label">attività</span>
         <strong class="kpi-value">${stats.ticks ?? 0} tick</strong>
-        <small>${stats.renames ?? 0} rinomine · ${stats.messages ?? 0} messaggi</small>
+        <small>${stats.renames ?? 0} rinomine · ${stats.messages ?? 0} messaggi · ${stats.created ?? 0} canali creati</small>
       </div>
     </div>`;
 
@@ -363,8 +367,39 @@ function renderOverview() {
     </div>`;
 
   $('#overview-dynamic').innerHTML = hero + kpis + previewCard + budget;
+  renderFlood(flood, rt);
   tickCountdown();
   renderLogTail();
+}
+
+/** Aggiorna la card di creazione canali senza ridisegnarla (il prefisso si sta digitando). */
+function renderFlood(flood, rt) {
+  const badge = $('#flood-badge');
+  if (badge) {
+    badge.className = `badge ${flood.running ? 'live' : 'off'}`;
+    badge.textContent = flood.running ? `attiva · ${flood.created ?? 0}` : 'fermo';
+  }
+  const prefix = $('#flood-prefix');
+  if (prefix && document.activeElement !== prefix) prefix.value = flood.prefix ?? '';
+  const interval = $('#flood-interval');
+  if (interval && document.activeElement !== interval) interval.value = flood.intervalSec ?? 5;
+  const start = $('#flood-start');
+  if (start) {
+    start.hidden = Boolean(flood.running);
+    start.disabled = !state.data?.bot?.connected;
+  }
+  const stop = $('#flood-stop');
+  if (stop) stop.hidden = !flood.running;
+  const count = $('#flood-count');
+  if (count) {
+    count.textContent = `${flood.created ?? 0} canali creati · ${flood.channels ?? 0}/${flood.limit ?? 500} sul server`;
+  }
+  const hint = $('#flood-hint');
+  if (hint) {
+    hint.innerHTML = rt.dryRun
+      ? 'Dry run attivo: la creazione viene solo simulata nel log. Disattivalo al passo 6 per crearli davvero.'
+      : `Il prossimo si chiamerà <code>${esc(flood.nextName ?? '—')}</code>. Si ferma da solo al tetto di ${flood.limit ?? 500} canali.`;
+  }
 }
 
 function logRow(entry) {
@@ -413,13 +448,21 @@ function renderSettings() {
   `;
 
   const snapshot = cfg.snapshot;
+  const createdChannels = data.runtime?.flood?.created ?? 0;
+  const createdNote = createdChannels
+    ? `<div class="alert warn">${createdChannels} canali creati dal bot sono ancora nel server: il ripristino li elimina.</div>`
+    : '';
   $('#settings-snapshot').innerHTML = snapshot
     ? `<div class="alert ok">Nomi originali salvati il ${new Date(snapshot.takenAt).toLocaleString('it-IT')} per ${snapshot.channels} canali${snapshot.restoredAt ? ` · già ripristinati il ${new Date(snapshot.restoredAt).toLocaleString('it-IT')}` : ''}.</div>
+       ${createdNote}
        <div class="row">
          <button class="btn danger" data-action="restore">Ripristina nomi e ordine</button>
          <button class="btn ghost small" data-action="snapshot">Aggiorna lo snapshot</button>
        </div>`
-    : '<div class="alert">Nessuno snapshot disponibile: viene creato automaticamente al primo avvio del loop.</div>';
+    : createdChannels
+      ? `${createdNote}
+         <div class="row"><button class="btn danger" data-action="restore">Elimina i canali creati</button></div>`
+      : '<div class="alert">Nessuno snapshot disponibile: viene creato automaticamente al primo avvio del loop.</div>';
 
   $('#about-version').textContent = `Versione ${data.version}${data.mock ? ' · modalità demo (Discord simulato)' : ''}`;
   $('#settings-token').placeholder = data.mock ? 'Modalità demo: token non necessario' : 'Nuovo token del bot';
@@ -1041,7 +1084,7 @@ document.addEventListener('click', async (event) => {
     case 'panic': {
       const confirmed = await confirmAction({
         title: 'Panic: ferma e ripristina?',
-        text: 'Il loop si ferma e il bot prova a riportare nomi e ordine originali. Rispetta i limiti Discord, quindi può richiedere qualche minuto.',
+        text: 'Il loop e la creazione canali si fermano: il bot elimina i canali creati e prova a riportare nomi e ordine originali. Rispetta i limiti Discord, quindi può richiedere qualche minuto.',
         confirmLabel: 'Sì, ripristina',
         danger: true,
       });
@@ -1054,7 +1097,7 @@ document.addEventListener('click', async (event) => {
     case 'restore': {
       const confirmed = await confirmAction({
         title: 'Ripristinare i canali?',
-        text: 'Nomi e ordine tornano a com\'erano prima del primo avvio. Il loop viene fermato.',
+        text: 'Nomi e ordine tornano a com\'erano prima del primo avvio, i canali creati vengono eliminati e il loop viene fermato.',
         confirmLabel: 'Ripristina',
         danger: true,
       });
@@ -1099,6 +1142,37 @@ document.addEventListener('click', async (event) => {
     }
     case 'send-now':
       await sendNow();
+      break;
+    case 'flood-start': {
+      const prefix = $('#flood-prefix')?.value.trim() ?? '';
+      const intervalSec = clampInt($('#flood-interval')?.value, 1, 3600, 5);
+      const dryRun = Boolean(state.data?.runtime?.dryRun);
+      const confirmed = await confirmAction({
+        title: 'Creare canali a raffica?',
+        text: dryRun
+          ? 'Il dry run è attivo: il bot simulerà la creazione e scriverà solo nel log.'
+          : `Il bot creerà un canale di testo ogni ${intervalSec} secondi, finché non premi Ferma. Si blocca da solo al limite di 500 canali. Panic elimina quelli creati.`,
+        confirmLabel: dryRun ? 'Simula' : 'Sì, crea',
+        danger: !dryRun,
+      });
+      if (!confirmed) break;
+      try {
+        await api('/control', { method: 'POST', body: { action: 'flood-start', prefix, intervalSec } });
+        await refresh();
+        toast(dryRun ? 'Simulazione creazione canali avviata.' : 'Creazione canali avviata.', 'success');
+      } catch (error) {
+        toast(error.message, 'error');
+      }
+      break;
+    }
+    case 'flood-stop':
+      try {
+        await api('/control', { method: 'POST', body: { action: 'flood-stop' } });
+        await refresh();
+        toast('Creazione canali fermata.', 'warn');
+      } catch (error) {
+        toast(error.message, 'error');
+      }
       break;
     case 'refresh-guilds': {
       try {

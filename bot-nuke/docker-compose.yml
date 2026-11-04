@@ -7,7 +7,7 @@ services:
       APP_PORT: 4321
 
   server:
-    image: ghcr.io/danyx67800/bot-nuke:1.0.0
+    image: ghcr.io/danyx67800/bot-nuke:1.1.0
     restart: on-failure
     stop_grace_period: 15s
     environment:

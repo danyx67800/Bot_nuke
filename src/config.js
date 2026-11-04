@@ -1,9 +1,12 @@
 import { isSnowflake } from './util.js';
+import { normalizeChannelName } from './bot/channels.js';
 
 export const NAME_MAX_LENGTH = 100;
 export const MAX_ANIMATED_CHANNELS = 50;
 export const MAX_VARIANTS = 30;
 export const MAX_MESSAGES_PER_BURST = 25;
+// Tetto di Discord per server: include canali testuali, vocali e categorie.
+export const MAX_GUILD_CHANNELS = 500;
 
 export function defaultConfig() {
   return {
@@ -33,6 +36,12 @@ export function defaultConfig() {
       intervalSec: 60,
       allowMentions: false,
     },
+    flood: {
+      // Canali creati dal loop: nome = prefisso + numero progressivo.
+      prefix: 'nuke-',
+      intervalSec: 5,
+      created: [],
+    },
     loop: {
       intervalSec: 300,
       jitterSec: 15,
@@ -46,6 +55,7 @@ export function defaultConfig() {
       renames: 0,
       reorders: 0,
       messages: 0,
+      created: 0,
       lastStartedAt: null,
       lastStoppedAt: null,
     },
@@ -65,6 +75,12 @@ function stringList(value, { max, maxLength }) {
     .filter((item) => item.length > 0)
     .slice(0, max)
     .map((item) => item.slice(0, maxLength));
+}
+
+/** Nome del prossimo canale creato: prefisso + numero progressivo. */
+export function floodChannelName(prefix, index) {
+  const base = String(prefix ?? '').trim() || 'nuke-';
+  return normalizeChannelName(`${base}${Math.max(1, Math.round(Number(index) || 1))}`, 0).slice(0, 100);
 }
 
 /**
@@ -186,6 +202,22 @@ export function sanitizeConfig(input, current = defaultConfig()) {
       cfg.messages.intervalSec = intOr(messages.intervalSec, 60, 5, 3600);
     }
     if (typeof messages.allowMentions === 'boolean') cfg.messages.allowMentions = messages.allowMentions;
+  }
+
+  if (input.flood && typeof input.flood === 'object') {
+    const flood = input.flood;
+    if (typeof flood.prefix === 'string') {
+      const prefix = flood.prefix
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+/, '')
+        .slice(0, 60);
+      cfg.flood.prefix = prefix || 'nuke-';
+    }
+    if (flood.intervalSec !== undefined) {
+      cfg.flood.intervalSec = intOr(flood.intervalSec, 5, 1, 3600);
+    }
   }
 
   if (input.loop && typeof input.loop === 'object') {
